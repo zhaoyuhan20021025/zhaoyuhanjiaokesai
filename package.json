@@ -1,0 +1,17 @@
+{
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "mapv-three": "^1.0.9",
+    "mapvgl": "^1.0.0-beta.173",
+    "react": "^18.2.0",
+    "react-bmapgl": "^0.2.16",
+    "react-dom": "^18.2.0",
+    "three": "^0.150.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "vite": "^4.1.4"
+  }
+}

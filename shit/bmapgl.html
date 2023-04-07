@@ -1,0 +1,303 @@
+<template>
+    <div class="GIS_box">
+        <a-button class="GIS_Button"  icon="unordered-list" @click="onHandleGIS">厂站视图</a-button>
+        <div class="GIS_Button_left">
+            <div style="border-bottom:1px solid #f1f1f1;margin-bottom:10px;padding-bottom:6px" >
+                <span style="font-weight:600;font-size:15px;margin-right:10px;">厂站列表</span>
+                <a-icon type="info-circle" style="margin: 5px;"/>共{{total}}条</div>
+            <a-input-search allowClear v-model="searchStr" @search="onSearch" placeholder="输入厂站名称关键字搜索" />
+            <!-- selectedKeys是选中项key的集合，expandedKeys是展开项key的集合 -->
+            <a-tree
+                v-model="checkedKeys"
+                :expanded-keys="expandedKeys"
+                :auto-expand-parent="autoExpandParent"
+                :selected-keys="selectedKeys"
+                @expand="onExpand"
+                @select="onSelect"
+            >
+                <a-icon slot="icon" type="carry-out" />
+                <a-tree-node :key="item.code" v-for="item in arrNum">
+                    <a-icon slot="icon" type="carry-out" />
+                    <span slot="title" style="color:#333">{{item.name}}</span>
+                    <a-tree-node :key="i.code" :title="i.name" v-for="i in item.nodes">
+                        <a-icon slot="icon" type="carry-out" />
+                        <a-tree-node :key="j.code" :title="j.name" v-for="j in i.nodes">
+                            <a-icon slot="icon" type="carry-out" />
+                        </a-tree-node>
+                    </a-tree-node>
+                </a-tree-node>
+            </a-tree>
+        </div>
+        <!-- Map -->
+        <div id="container">
+        </div>
+    </div>
+</template>
+
+<script>
+import viewMap from '@/components/ZF/viewMap'
+import { query_station_with_address, query_station_info } from '@/api/factory'
+export default {
+    name: 'BMapGL',
+    data () {
+        return {
+            showLine: true,
+            total: '',
+            arrNum: [],
+            expanded: [],
+            expandedKeys: [],
+            backupsExpandedKeys: [],
+            autoExpandParent: true,
+            checkedKeys: [],
+            selectedKeys: [],
+            searchStr: '',
+
+            lng: 118.920079,
+            lat: 32.086119
+        }
+    },
+    mounted () {
+        let _this = this
+        this.$nextTick(() => {
+            _this.Address()
+        })
+    },
+    watch: {
+        searchStr: {
+            handler (newValue, oldValue) {
+                this.onSearch()
+            },
+            immediate: true
+        }
+    },
+    methods: {　　　　　// 树
+        Address () {
+            this.arrNum = []
+            this.total = 0
+            const params = {}
+            query_station_with_address(params).then(res => {
+                if (res.code === '00000') {
+                    this.total = res.data.count
+                    this.arrNum = res.data.tree
+                    this.totalNum()
+                }
+            })
+        },
+　　　　　//返回其他页面
+        onHandleGIS () {
+            this.$parent.handleGIS()
+            this.expandedKeys = []
+            this.selectedKeys = []
+            this.autoExpandParent = false
+            this.searchStr = ''
+        },　　　　　// input框事件
+        onSearch () {
+            let vm = this
+            vm.searchValue = vm.searchStr
+            if (vm.searchValue === '') {
+                vm.expandedKeys = []
+                this.totalNum()
+                this.expandedKeys = []
+                this.selectedKeys = []
+            } else {
+                vm.expandedKeys = []
+                vm.backupsExpandedKeys = []
+                let candidateKeysList = []
+                let key = []
+                candidateKeysList = vm.getkeyList(vm.searchValue, vm.arrNum, [])
+                // 遍历满足条件的所有节点
+                candidateKeysList.map(item => {
+                    key = vm.getParentKey(item, vm.arrNum)
+                    if (key && !vm.backupsExpandedKeys.some(item => item === key)) { vm.backupsExpandedKeys.push(key) }
+                })
+                let length = this.backupsExpandedKeys.length
+                for (let i = 0; i < length; i++) {
+                    vm.getAllParentKey(vm.backupsExpandedKeys[i], vm.arrNum)
+                }
+                // console.log(candidateKeysList)
+                vm.expandedKeys = vm.backupsExpandedKeys.slice()
+                vm.selectedKeys = vm.backupsExpandedKeys.slice()
+                vm.onSelect(candidateKeysList) //选中树事件
+            }
+        },
+        // 获取节点中含有value的所有key集合
+        getkeyList (value, tree, keyList) {
+        // 遍历所有同一级的树
+            for (let i = 0; i < tree.length; i++) {
+                let node = tree[i]
+                // console.log(node.name)
+                // 如果该节点存在value值则push
+                if (node.name.indexOf(value) > -1) {
+                    keyList.push(node.code)
+                    // console.log(node.code)
+                }
+                // 如果拥有孩子继续遍历
+                if (node.nodes) {
+                    this.getkeyList(value, node.nodes, keyList)
+                }
+            }
+            // 因为是引用类型，所有每次递归操作的都是同一个数组
+            return keyList
+        },
+        // 该递归主要用于获取key的父亲节点的key值
+        getParentKey (key, tree) {
+            let parentKey, temp
+            // 遍历同级节点
+            for (let i = 0; i < tree.length; i++) {
+                const node = tree[i]
+                if (node.nodes) {
+                    // 如果该节点的孩子中存在该key值，则该节点就是我们要找的父亲节点
+                    // 如果不存在，继续遍历其子节点
+                    if (node.nodes.some(item => item.code === key)) {
+                        parentKey = node.code
+                    // eslint-disable-next-line no-cond-assign
+                    } else if (temp = this.getParentKey(key, node.nodes)) {
+                        // parentKey = this.getParentKey(key,node.children)
+                        // 改进，避免二次遍历
+                        parentKey = temp
+                    }
+                }
+            }
+            return parentKey
+        },
+        // 获取该节点的所有祖先节点
+        getAllParentKey (key, tree) {
+            var parentKey
+            if (key) {
+                // 获得父亲节点
+                parentKey = this.getParentKey(key, tree)
+                // 如果父亲节点存在，判断是否已经存在于展开列表里，不存在就进行push
+                if (parentKey) {
+                    if (!this.backupsExpandedKeys.some(item => item === parentKey)) {
+                        this.backupsExpandedKeys.push(parentKey)
+                    }
+                    // 继续向上查找祖先节点
+                    this.getAllParentKey(parentKey, tree)
+                }
+            }
+        },
+        // 初始化
+        initMap (numPoint) {
+            // eslint-disable-next-line new-cap
+            ksMap = new viewMap(numPoint) //实例化class类
+        },
+        onExpand (expandedKeys) {
+            // console.log(expandedKeys)
+            this.expandedKeys = expandedKeys
+            this.autoExpandParent = false
+        },
+        // 树选中事件
+        onSelect (selectedKeys, info) {
+            this.arrNum.map(item => {
+                item.nodes.map(i => {
+                    i.nodes.map(j => {
+                        if (j.data.uniq === selectedKeys[0]) {
+                            this.handleEdit(selectedKeys[0], j.data.longitude, j.data.attitude)
+                            this.selectedKeys = selectedKeys
+                            // this.searchStr = j.name
+                        }
+                    })
+                })
+            })
+        },
+        // 初始化点位值
+        totalNum () {
+            let numPoint = []
+            this.arrNum.map(item => {
+                item.nodes.map(i => {
+                    i.nodes.map(j => {
+                        numPoint.push({
+                            uniq: j.data.uniq,
+                            lng: j.data.longitude,
+                            lat: j.data.attitude,
+                            name: j.name
+                        })
+                    })
+                })
+            })
+            this.initMap(numPoint)
+        },
+        // 详情
+        handleEdit (selectedKeys, lng, lat) {
+            let modalList = []
+            const params = {
+                station_uniq: selectedKeys
+            }
+            query_station_info(params).then(res => {
+                if (res.code === '00000') {
+                    modalList = res.data
+                    ksMap.theLocation(lng, lat, modalList)
+                }
+            })
+        }
+    }
+}
+</script>
+
+<style scoped lang="less">
+/deep/.BMap_bubble_pop{
+    padding: 0!important;
+}
+/deep/.BMap_bubble_title{
+    padding-left: 10px;
+    background: #F3F3F3;
+    font-size: 16px;
+}
+.show{
+display: block;
+}
+.block{
+    display: none;
+}
+    #container {
+        overflow: hidden;
+        width: 100%;
+        height: 75vh;
+        margin: 0;
+        font-family: "微软雅黑";
+    }
+    .GIS_box {
+        position: relative;
+        width: 100%;
+        height: 72vh;
+    .GIS_Button {
+        z-index: 999;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+    }
+    .GIS_Button_left{
+        width: 250px;
+        padding: 10px;
+        height: 74.9vh;
+        overflow-y:scroll;
+        background: rgba(255, 255, 255, 1);
+        z-index: 999;
+        position: absolute;
+        top: 0px;
+        left: 0px;
+        box-shadow: 3px 3px rgba(235, 235, 235,0.7);
+    }
+}
+/deep/.BMap_cpyCtrl span {
+    display: none!important;
+}
+/deep/.ant-tree.ant-tree-show-line li span.ant-tree-switcher {
+    color: rgba(0, 157, 255, 1);
+    background: rgba(0, 0, 0, 0);
+}
+/deep/.ant-tree-title{
+    color: #333;
+}
+// 经过
+// /deep/.ant-tree li .ant-tree-node-content-wrapper:hover {
+//     background: rgba(0, 0, 0, 0);
+// }
+// /deep/.ant-tree li .ant-tree-node-content-wrapper.ant-tree-node-selected {
+//     background-color: rgba(0, 157, 255, 1);
+// }
+/deep/.ant-input{
+    background: rgba(0, 0, 0, 0);
+    color: #333;
+}
+</style>

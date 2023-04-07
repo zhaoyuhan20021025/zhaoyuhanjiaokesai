@@ -1,0 +1,19 @@
+[
+    {
+        "properties": {},
+        "geometry": {
+            "type": 109.6397327,
+            "coordinates": [116.404, 39.915]
+        }
+    },
+    {
+        "properties": {},
+        "geometry": {
+            "type": 1000,
+            "coordinates": [
+                116.475783,
+                39.908287
+            ]
+        }
+    }
+]
